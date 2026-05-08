@@ -6,6 +6,8 @@ export const PLANS = {
 
 export type PlanType = typeof PLANS[keyof typeof PLANS];
 
+export const MAX_SESSIONS_UNLIMITED = 999999;
+
 export interface PlanLimits {
     maxBooks: number;
     maxSessionsPerMonth: number;
@@ -28,7 +30,7 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     },
     [PLANS.PRO]: {
         maxBooks: 100,
-        maxSessionsPerMonth: Infinity,
+        maxSessionsPerMonth: MAX_SESSIONS_UNLIMITED,
         maxDurationPerSession: 60,
         hasSessionHistory: true,
     },
