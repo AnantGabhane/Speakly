@@ -10,7 +10,7 @@ const steps = [
 
 const HeroSection = () => {
   return (
-    <main className="wrapper pt-28 mb-10 md:mb-16">
+    <main className="wrapper mb-10 md:mb-16">
       <section className="mx-auto w-full max-w-[1200px] px-5 xl:px-0">
         <div className="grid min-h-[336px] grid-cols-1 items-center gap-8 rounded-[12px] bg-[#f3e4c7] px-10 py-[54px] md:grid-cols-[minmax(330px,1fr)_minmax(300px,380px)] lg:grid-cols-[360px_378px_260px] lg:gap-[61px] lg:py-[58px]">
           <div className="max-w-[390px]">
