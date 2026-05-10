@@ -19,7 +19,7 @@ const Navbar = () => {
         <header className="w-full fixed z-50 border-b border-[#ded6c7] bg-(--bg-primary)">
             <div className="mx-auto flex h-[74px] w-full max-w-[1200px] items-center justify-between px-5 xl:px-0">
                 <Link href="/" className="flex gap-0.5 items-center">
-                    <Image src="/assets/logo.png" alt="Speakly" width={42} height={26} />
+                    <Image src="/assets/logo.png" alt="Speakly" width={42} height={26} style={{ height: "auto" }} />
                     <span className="logo-text">Speakly</span>
                 </Link>
 

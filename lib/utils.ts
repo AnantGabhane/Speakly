@@ -92,11 +92,11 @@ export const formatDuration = (seconds: number): string => {
 
 export async function parsePDFFile(file: File) {
   try {
-    const pdfjsLib = await import('pdfjs-dist');
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
     if (typeof window !== 'undefined') {
       pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          'pdfjs-dist/build/pdf.worker.min.mjs',
+          'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
           import.meta.url,
       ).toString();
     }
@@ -105,7 +105,7 @@ export async function parsePDFFile(file: File) {
     const arrayBuffer = await file.arrayBuffer();
 
     // Load PDF document
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
     const pdfDocument = await loadingTask.promise;
 
     // Render first page as cover image
@@ -115,15 +115,9 @@ export async function parsePDFFile(file: File) {
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error('Could not get canvas context');
-    }
-
     await firstPage.render({
-      canvasContext: context,
-      viewport: viewport,
+      canvas,
+      viewport,
     }).promise;
 
     // Convert canvas to data URL
