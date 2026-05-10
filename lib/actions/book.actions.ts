@@ -6,6 +6,7 @@ import {escapeRegex, generateSlug, serializeData} from "@/lib/utils";
 import Book from "@/database/models/book.model";
 import BookSegment from "@/database/models/book-segment.model";
 import mongoose from "mongoose";
+import {del} from "@vercel/blob";
 
 const getActionErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error) return error.message;
@@ -127,6 +128,90 @@ export const createBook = async (data: CreateBook) => {
         return {
             success: false,
             error: getActionErrorMessage(e, 'Failed to create book.'),
+        }
+    }
+}
+
+export const cleanupIncompleteBook = async (bookId: string, clerkId: string) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(bookId)) {
+            return { success: false, error: "Invalid book ID" };
+        }
+
+        await connectToDatabase();
+
+        const { auth } = await import("@clerk/nextjs/server");
+        const { userId } = await auth();
+
+        if (!userId || userId !== clerkId) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        const incompleteBook = await Book.findOne({ _id: bookId, clerkId, totalSegments: 0 })
+            .select("_id")
+            .lean();
+
+        if (!incompleteBook) {
+            return { success: false, error: "Incomplete book not found" };
+        }
+
+        await BookSegment.deleteMany({ bookId, clerkId });
+        await Book.deleteOne({ _id: bookId, clerkId, totalSegments: 0 });
+
+        return { success: true };
+    } catch (e) {
+        console.error('Error cleaning up incomplete book', e);
+
+        return {
+            success: false,
+            error: getActionErrorMessage(e, 'Failed to clean up incomplete book.'),
+        }
+    }
+}
+
+export const deleteUploadedBlobs = async (pathnames: string[]) => {
+    try {
+        const uniquePathnames = Array.from(
+            new Set(
+                pathnames
+                    .map((pathname) => pathname.trim())
+                    .filter((pathname) => pathname.length > 0 && !pathname.startsWith('http')),
+            ),
+        );
+
+        if (uniquePathnames.length === 0) {
+            return { success: true, data: { deleted: 0 } };
+        }
+
+        const { auth } = await import("@clerk/nextjs/server");
+        const { userId } = await auth();
+
+        if (!userId) {
+            return { success: false, error: "Unauthorized" };
+        }
+
+        await connectToDatabase();
+
+        const linkedBook = await Book.findOne({
+            $or: [
+                { fileBlobKey: { $in: uniquePathnames } },
+                { coverBlobKey: { $in: uniquePathnames } },
+            ],
+        }).select("_id").lean();
+
+        if (linkedBook) {
+            return { success: false, error: "Blob is already linked to a book" };
+        }
+
+        await del(uniquePathnames);
+
+        return { success: true, data: { deleted: uniquePathnames.length } };
+    } catch (e) {
+        console.error('Error deleting uploaded blobs', e);
+
+        return {
+            success: false,
+            error: getActionErrorMessage(e, 'Failed to delete uploaded blobs.'),
         }
     }
 }

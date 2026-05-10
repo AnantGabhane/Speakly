@@ -15,10 +15,16 @@ import VoiceSelector from './VoiceSelector';
 import LoadingOverlay from './LoadingOverlay';
 import {useAuth} from "@clerk/nextjs";
 import { toast } from 'sonner';
-import {checkBookExists, createBook, saveBookSegments} from "@/lib/actions/book.actions";
+import {
+    checkBookExists,
+    cleanupIncompleteBook,
+    createBook,
+    deleteUploadedBlobs,
+    saveBookSegments,
+} from "@/lib/actions/book.actions";
 import {useRouter} from "next/navigation";
 import {parsePDFFile} from "@/lib/utils";
-import {upload} from "@vercel/blob/client";
+import {upload, type PutBlobResult} from "@vercel/blob/client";
 
 const UploadForm = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,6 +51,33 @@ const UploadForm = () => {
 
         // PostHog -> Track Book Uploads...
 
+        let uploadedPdfBlob: PutBlobResult | null = null;
+        let uploadedCoverBlob: PutBlobResult | null = null;
+        let createdBookId: string | null = null;
+
+        const cleanupUploadedBlobs = async () => {
+            const cleanup = await deleteUploadedBlobs([
+                uploadedPdfBlob?.pathname,
+                uploadedCoverBlob?.pathname,
+            ].filter((pathname): pathname is string => Boolean(pathname)));
+
+            if (!cleanup.success) {
+                console.error('Failed to clean up uploaded blobs', cleanup.error);
+            }
+        };
+
+        const cleanupCreatedBook = async () => {
+            if (!createdBookId) return true;
+
+            const cleanup = await cleanupIncompleteBook(createdBookId, userId);
+
+            if (!cleanup.success) {
+                console.error('Failed to clean up incomplete book', cleanup.error);
+            }
+
+            return cleanup.success;
+        };
+
         try {
             const existsCheck = await checkBookExists(data.title);
 
@@ -65,7 +98,7 @@ const UploadForm = () => {
                 return;
             }
 
-            const uploadedPdfBlob = await upload(fileTitle, pdfFile, {
+            uploadedPdfBlob = await upload(fileTitle, pdfFile, {
                 access: 'public',
                 handleUploadUrl: '/api/upload',
                 contentType: 'application/pdf'
@@ -75,7 +108,7 @@ const UploadForm = () => {
 
             if(data.coverImage) {
                 const coverFile = data.coverImage;
-                const uploadedCoverBlob = await upload(`${fileTitle}_cover.png`, coverFile, {
+                uploadedCoverBlob = await upload(`${fileTitle}_cover.png`, coverFile, {
                     access: 'public',
                     handleUploadUrl: '/api/upload',
                     contentType: coverFile.type
@@ -85,7 +118,7 @@ const UploadForm = () => {
                 const response = await fetch(parsedPDF.cover)
                 const blob = await response.blob();
 
-                const uploadedCoverBlob = await upload(`${fileTitle}_cover.png`, blob, {
+                uploadedCoverBlob = await upload(`${fileTitle}_cover.png`, blob, {
                     access: 'public',
                     handleUploadUrl: '/api/upload',
                     contentType: 'image/png'
@@ -101,10 +134,12 @@ const UploadForm = () => {
                 fileURL: uploadedPdfBlob.url,
                 fileBlobKey: uploadedPdfBlob.pathname,
                 coverURL: coverUrl,
+                coverBlobKey: uploadedCoverBlob.pathname,
                 fileSize: pdfFile.size,
             });
 
             if(!book.success) {
+                await cleanupUploadedBlobs();
                 toast.error(book.error as string || "Failed to create book");
                 if (book.isBillingError) {
                     router.push("/subscriptions");
@@ -113,17 +148,23 @@ const UploadForm = () => {
             }
 
             if(book.alreadyExists) {
+                await cleanupUploadedBlobs();
                 toast.info("Book with same title already exists.");
                 form.reset()
                 router.push(`/books/${book.data.slug}`)
                 return;
             }
 
+            createdBookId = book.data._id;
             const segments = await saveBookSegments(book.data._id, userId, parsedPDF.content);
 
             if(!segments.success) {
+                const bookCleanedUp = await cleanupCreatedBook();
+                if (bookCleanedUp) {
+                    await cleanupUploadedBlobs();
+                }
                 toast.error("Failed to save book segments");
-                throw new Error("Failed to save book segments");
+                return;
             }
 
             form.reset();
@@ -131,6 +172,10 @@ const UploadForm = () => {
         } catch (error) {
             console.error(error);
 
+            const bookCleanedUp = await cleanupCreatedBook();
+            if (bookCleanedUp) {
+                await cleanupUploadedBlobs();
+            }
             toast.error("Failed to upload book. Please try again later.");
         } finally {
             setIsSubmitting(false);
